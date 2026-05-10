@@ -4,12 +4,20 @@ This repository contains pipeline code and trained models acting as a robust, au
 
 ## 🎯 Versioning Strategy
 
-- **[v2.0] (Current): Explainable Fine-Tuned Triaging**
-  - **Fine-Tuning:** Unfroze ResNet50 deeper layers (`layer4`) using differential learning rates to specialize in Fundus topography. Added L2 regularization (`weight_decay`) to curb overfitting.
-  - **Class Imbalance Upgrade:** Replaced static loss weighting with PyTorch's native `WeightedRandomSampler` for proportional batch-balancing.
-  - **Image Preprocessing:** Incorporated Contrast Limited Adaptive Histogram Equalization (CLAHE) natively into the dataloader transforms to standardize varying medical lighting.
-  - **Evaluation & Explainability:** Deployed `sklearn` Precision-Recall curves and Area Under Curve (AUC) plotting. Added **Grad-CAM** visual heatmapping to mathematically trace physiological locations of detected cataracts.
-  - **Prototyping:** Created `app.py`, an interactive Streamlit GUI for physicians to upload patient scans and visually review the triage prediction.
+- **[v2.1.0] (Current): Near-Perfect Detection Pipeline** (`cataract_v3.py`)
+  - **Architecture Upgrade:** Replaced ResNet50 with **EfficientNet-B3** at 300×300 native resolution (~80% more pixels). Added a deep 2-layer classification head (1536→512→1) with BatchNorm.
+  - **Focal Loss:** Replaced BCE with Focal Loss (α=0.75, γ=2.0) to down-weight easy negatives and focus on hard cataract cases.
+  - **Aggressive Augmentation:** 10-transform pipeline including ColorJitter, GaussianBlur, RandomErasing, RandomAffine, vertical flips, and RandomGrayscale.
+  - **Mixup Regularization:** Randomly blends training image pairs and their labels to combat overfitting.
+  - **Label Smoothing:** Soft labels (0.05↔0.95) for better probability calibration.
+  - **Mixed Precision (AMP):** `torch.amp` for faster training with no accuracy loss.
+  - **AdamW + Cosine Annealing:** Decoupled weight decay with warm restart scheduling.
+  - **Enhanced TTA (5x):** Test-time ensemble of original, H-flip, V-flip, both flips, and 90° rotation.
+  - **Optimal Threshold Search:** Automated sweep on validation set to maximize F1.
+  - **Gradient Clipping:** `max_norm=1.0` for stable fine-tuning.
+
+- **[v2.0] (Legacy): Explainable Fine-Tuned Triaging** (`cataract.ipynb`)
+  - ResNet50 fine-tuning with `layer3`+`layer4` unfrozen. `WeightedRandomSampler`. CLAHE preprocessing. Grad-CAM explainability. Streamlit GUI prototype.
 
 - **[v1.0] (Legacy): Baseline Model Integration** 
   - Standard ResNet-50 Transfer Learning with entirely frozen base layers.
@@ -32,8 +40,8 @@ Originally, the ODIR-5K dataset had an extreme class imbalance (only ~7% out of 
 ### 1. "Targeted Screening" Framework (Cataract vs. Everything Else)
 The ODIR-5K dataset has 8 optical labels. This is narrowed down to a binary classifier where Class `0` contains normal eyes *and* eyes with non-cataract diseases (glaucoma, myopia, etc.). The model focuses exclusively on routing likely candidates toward cataract surgery, making it a pure triage screening tool. 
 
-### 2. ResNet50 Transfer Learning & Fine Tuning
-We initialize a pre-trained `ResNet50_Weights.IMAGENET1K_V1` network to combat strict medical data scarcity. To push past the model plateau, we use **Gradual Unfreezing**. We freeze the first three ResNet blocks but explicitly unfreeze `layer4` (the deepest visual block). The optimizer trains the custom classifier at `lr=1e-3` but carefully adapts `layer4` at `lr=1e-5`, learning the specific medical textures without destroying pre-learned boundaries.
+### 2. EfficientNet-B3 Transfer Learning & Fine Tuning (v2.1.0)
+We initialize a pre-trained `EfficientNet_B3_Weights.IMAGENET1K_V1` network at 300×300 resolution. We freeze the first 5 feature blocks but unfreeze blocks 5–8 with differential learning rates using `AdamW`. The custom classifier uses a deep 2-layer head (1536→512→1) with BatchNorm and dual Dropout for robust regularization. Training uses **Focal Loss** (α=0.75, γ=2.0) which specifically down-weights easy-to-classify normal cases and forces the model to focus on hard cataract cases.
 
 ## 🏗️ Architecture & Pipeline (`cataract.ipynb`)
 
